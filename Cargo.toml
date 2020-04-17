@@ -1,0 +1,15 @@
+[package]
+name = "litedb"
+version = "0.1.0"
+authors = ["ryan <ryan@kurte.nz>"]
+edition = "2018"
+
+[dependencies]
+bincode = "1.2.1"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies.serde]
+version = "1.0.106"
+features = [ "derive" ]
+
