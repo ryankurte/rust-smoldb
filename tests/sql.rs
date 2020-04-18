@@ -7,7 +7,7 @@ use smoldb::*;
 #[derive(Clone, Debug, PartialEq, Smoldb)]
 pub struct Example {
     #[index]
-    pub id: i32,
+    pub id: i64,
 
     #[index]
     pub name: String,
@@ -44,10 +44,10 @@ fn sql_delete() {
 
 #[test]
 fn index_id() {
-    let i = ExampleIndicies::Id("abc".to_string());
+    let i = ExampleIndicies::Id(16);
 
     assert_eq!(i.name(), "id");
-    assert_eq!(i.value(), "abc");
+    assert_eq!(i.value(), ToSqlOutput::Owned(Value::Integer(16)));
 }
 
 #[test]
@@ -55,5 +55,5 @@ fn index_name() {
     let i = ExampleIndicies::Name("abc".to_string());
 
     assert_eq!(i.name(), "name");
-    assert_eq!(i.value(), "abc");
+    assert_eq!(i.value(), ToSqlOutput::Owned(Value::Text("abc".to_string())));
 }

@@ -4,13 +4,14 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 extern crate syn;
-use syn::{DeriveInput, Data, AttrStyle, Meta};
+use syn::{DeriveInput, Data, AttrStyle, Field, Type, Meta, Ident};
 
 extern crate inflector;
 use inflector::Inflector;
 
 #[macro_use]
 extern crate quote;
+use quote::ToTokens;
 
 extern crate smoldb_traits;
 use smoldb_traits::*;
@@ -25,28 +26,82 @@ pub fn smoldb(input: TokenStream) -> TokenStream {
     gen
 }
 
+/// Implement `Smoldb` derive macro
 fn impl_smoldb(ast: &syn::DeriveInput) -> TokenStream {
-    let s_name = &ast.ident;
+    let struct_name = &ast.ident;
 
     let s = match &ast.data {
         Data::Struct(s) => s,
         _ => panic!("#[derive(Smoldb)] is only defined for structs"),
     };
 
-    let mut field_names = vec![];
-    let mut index_names = vec![];
+    // Extract index fields
+    let index_fields = extract_fields(s);
 
-    // Extract fields and indicies
-    for f in &s.fields {
+    // Create enum name for index enumeration
+    let index_enum_name = format_ident!("{}Indicies", struct_name);
+
+    // Build index enum
+    let index_enum = build_indicies(&index_enum_name, &index_fields);
+
+    // Implement storable on derived type
+    let storable_impl = build_storable(struct_name, &index_enum_name, &index_fields);
+
+    // Generate outputs
+    let output = quote! {
+        #index_enum
+        #storable_impl
+    };
+
+    output.into()
+}
+
+
+
+fn field_to_ident(ty: &Type) -> &Ident {
+    let segments = match ty {
+        Type::Path(p) => &p.path.segments,
+        _ => panic!(),
+    };
+
+    let ident = match segments.iter().last() {
+        Some(s) => &s.ident,
+        _ => panic!(),
+    };
+
+    ident
+}
+
+#[derive(Debug)]
+struct IndexField<'a> {
+    pub name: String,
+
+    pub field: &'a Field,
+
+    pub ident: &'a Ident,
+
+    pub sql_type: Option<String>,
+
+    pub is_index: bool,
+}
+
+fn extract_fields<'a>(s: &'a syn::DataStruct) -> Vec<IndexField<'a>> {
+    let mut index_fields = vec![];
+
+    // Extract fields that should be used for indexing
+    for field in &s.fields {
         // Skip unnamed fields (because we can't really do anything here)
-        let name = match &f.ident {
+        let name = match &field.ident {
             Some(v) => v.to_string(),
             None => panic!("#[derive(Smoldb)] structs must only contain named fields"),
         };
 
-        field_names.push(name.clone());
+        // Fetch field type
+        let ident = field_to_ident(&field.ty);
 
-        for a in &f.attrs {
+        let mut i = IndexField { name, field, ident, sql_type: None, is_index: false, };
+
+        for a in &field.attrs {
             // Skip inner attributes
             if a.style != AttrStyle::Outer {
                 continue;
@@ -59,82 +114,83 @@ fn impl_smoldb(ast: &syn::DeriveInput) -> TokenStream {
             // TODO: type bindings here
             match meta {
                 Meta::Path(p) if p.is_ident("index") => {
-                    index_names.push(name.clone());
+                    i.is_index = true;
                 },
                 _ => (),
             }
         }
+
+        // Push index fields
+        if i.is_index {
+            index_fields.push(i);
+        }
     }
 
-    if index_names.len() == 0 {
+    if index_fields.len() == 0 {
         panic!("#[derive(Smoldb)] requires at least one field to be marked as an #[index]")
     }
 
-    // Build fields for interpolation
+    index_fields
+}
 
-    let mut db_fields = String::new();
-    let mut db_field_names = String::new();
-    let mut db_values = String::new();
-    let mut db_update_fields = String::new();
+fn build_indicies<'a>(index_enum_name: &Ident, index_fields: &[IndexField<'a>]) -> impl ToTokens {
 
-    let index_enum_name = format_ident!("{}Indicies", s_name);
-    let mut index_enum_values = vec![];
+    let mut index_enum_definitions = vec![];
     let mut index_enum_name_matches = vec![];
-    let mut index_fields = vec![];
-    let mut index_names_static = vec![];
+    let mut index_enum_value_matches = vec![];
 
-    let mut n = 1;
+    for i in index_fields {
+        
+        let field_name = &i.name;
 
-    for i in &index_names {
-        // TODO: we should be able to map fields to non-string types here?
-        db_fields.push_str(&format!("{} VARCHAR NOT NULL, ", i));
+        // Override basic field types
+        let field_type = format_ident!("{}", i.ident.to_string());
 
-        db_field_names.push_str(&format!("{}, ", i));
+        // Enum variant name
+        let index_enum_variant = format_ident!("{}", field_name.to_title_case() );
 
-        db_values.push_str(&format!("?{}, ", n));
+        // Enum variant definition (in enum declaration)
+        index_enum_definitions.push(quote!( #index_enum_variant(#field_type) ));
 
-        db_update_fields.push_str(&format!("{} = ?{}, ", i, n));
+        // Match for getting index names
+        index_enum_name_matches.push(quote!( Self::#index_enum_variant(_) => #field_name ));
 
-        let index_enum_variant = format_ident!("{}", i.to_title_case() );
-        index_enum_values.push( quote!( #index_enum_variant ) );
-
-        let index_name_static = format_ident!("{}_{}", s_name.to_string().to_screaming_snake_case(), i.to_screaming_snake_case() );
-        index_names_static.push(quote!( pub const #index_name_static: &str = #i ));
-        index_enum_name_matches.push(quote!( Self::#index_enum_variant(_) => #index_name_static ));
-
-        index_fields.push(format_ident!("{}", i ));
-
-        n += 1;
+        // Match for getting index values
+        match &i.field.ty {
+            Type::Path(p) if p.path.is_ident("String") => {
+                // Strings need to be manually cloned
+                index_enum_value_matches.push(quote!( Self::#index_enum_variant(v) => ToSqlOutput::Owned(v.clone().into()) ));
+            },
+            Type::Path(p) if p.path.is_ident("Vec<u8>") => {
+                // Strings need to be manually cloned
+                index_enum_value_matches.push(quote!( Self::#index_enum_variant(v) => ToSqlOutput::Owned(v.clone().into()) ));
+            },
+            _ => {
+                index_enum_value_matches.push(quote!( Self::#index_enum_variant(v) => ToSqlOutput::Owned((*v).into()) ));
+            }
+        }
+        
     }
 
-    db_fields.push_str(&format!("{} BLOB NOT NULL", OBJECT_KEY));
-    db_field_names.push_str(OBJECT_KEY);
-    db_values.push_str(&format!("?{}", n));
-    db_update_fields.push_str(&format!("{} = ?{}", OBJECT_KEY, n));
-
-    // Generate outputs
-    let output = quote! {
-        /// Static index names for referencing
-        #(#index_names_static;)*
-
+    quote! {
         /// Indicies available for querying #s_name objects
         #[derive(Clone, PartialEq, Debug)]
         pub enum #index_enum_name {
-            #(#index_enum_values(String),)*
+            #(#index_enum_definitions,)*
         }
 
         impl #index_enum_name {
             /// Fetch the column name for the index
             fn name(&self) -> &'static str {
                 match self {
-                    #(#index_enum_name_matches,)*
+                    #(#index_enum_name_matches, )*
                 }
             }
 
             /// Fetch the value for the asspciated index
-            fn value<'a> (&'a self) -> &'a str {
+            fn value<'a> (&'a self) -> ToSqlOutput {
                 match &self {
-                    #(Self::#index_enum_values(v) => v,)*
+                    #(#index_enum_value_matches, )*
                 }
             }
         }
@@ -142,11 +198,53 @@ fn impl_smoldb(ast: &syn::DeriveInput) -> TokenStream {
         /// ToSql implementation allows #index_enum_name to be used as parameters to queries
         impl ToSql for #index_enum_name {
             fn to_sql(&self) -> Result<ToSqlOutput, rusqlite::Error> {
-                Ok(ToSqlOutput::Borrowed(self.value().into()))
+                Ok(self.value())
             }
         }
+    }
+}
 
-        impl Storable for #s_name {
+fn build_storable<'a>(struct_name: &Ident, index_enum_name: &Ident, index_fields: &[IndexField<'a>]) -> impl ToTokens {
+
+    let mut db_fields = String::new();
+    let mut db_field_names = String::new();
+    let mut db_field_values = String::new();
+    let mut db_field_updates = String::new();
+
+    let mut index_field_params = vec![];
+
+    let mut n = 1;
+
+    for i in index_fields {
+
+        // Database field for SQL create
+        // TODO: allow type overrides here
+        db_fields.push_str(&format!("{} VARCHAR NOT NULL, ", i.name));
+
+        // Raw database field names
+        db_field_names.push_str(&format!("{}, ", i.name));
+
+        // Database field value entries
+        db_field_values.push_str(&format!("?{}, ", n));
+
+        // Database field update entries
+        db_field_updates.push_str(&format!("{} = ?{}, ", i.name, n));
+
+        // Fields for all possible indicies
+        index_field_params.push(format_ident!("{}", i.name ));
+
+        n += 1;
+    }
+
+    db_fields.push_str(&format!("{} BLOB NOT NULL", OBJECT_KEY));
+    db_field_names.push_str(OBJECT_KEY);
+    db_field_values.push_str(&format!("?{}", n));
+    db_field_updates.push_str(&format!("{} = ?{}", OBJECT_KEY, n));
+
+    // Build Storable impl for derived type
+    quote! {
+        /// Macro-derived storable implementation
+        impl Storable for #struct_name {
             type Indicies = #index_enum_name;
 
             /// Generate create table SQL statement
@@ -156,7 +254,7 @@ fn impl_smoldb(ast: &syn::DeriveInput) -> TokenStream {
 
             /// Generate insert SQL statement
             fn sql_insert(table_name: &str) -> String {
-                format!("INSERT INTO {} ({}) VALUES ({});", table_name, #db_field_names, #db_values)
+                format!("INSERT INTO {} ({}) VALUES ({});", table_name, #db_field_names, #db_field_values)
             }
 
             /// Generate select statement with the provided indicies
@@ -175,9 +273,9 @@ fn impl_smoldb(ast: &syn::DeriveInput) -> TokenStream {
                 let w: Vec<String> = indicies.iter().map(|i| format!("{} = ?", i.name() ) ).collect();
 
                 if w.len() == 0 {
-                    format!("UPDATE {} SET {};", table_name, #db_update_fields, )
+                    format!("UPDATE {} SET {};", table_name, #db_field_updates, )
                 } else {
-                    format!("UPDATE {} SET {} WHERE {};", table_name, #db_update_fields, w.join(", "))
+                    format!("UPDATE {} SET {} WHERE {};", table_name, #db_field_updates, w.join(", "))
                 }
             }
 
@@ -195,12 +293,9 @@ fn impl_smoldb(ast: &syn::DeriveInput) -> TokenStream {
             /// Fetch parameter values from object instance
             fn params<'a>(&'a self) -> Vec<Box<&'a dyn ToSql>> {
                 vec![
-                    #(Box::new(&self.#index_fields), )*
+                    #(Box::new(&self.#index_field_params), )*
                 ]
             }
         }
-    };
-
-    output.into()
+    }
 }
-

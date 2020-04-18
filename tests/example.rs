@@ -11,7 +11,7 @@ use smoldb::*;
 
 #[derive(Clone, Debug, PartialEq, Smoldb, Serialize, Deserialize)]
 pub struct User {
-    //#[index]
+    #[index]
     pub id: isize,
 
     #[index]

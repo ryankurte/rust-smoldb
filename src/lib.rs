@@ -12,7 +12,7 @@ extern crate bincode;
 
 #[macro_use]
 extern crate rusqlite;
-pub use rusqlite::{ToSql, types::ToSqlOutput};
+pub use rusqlite::{ToSql, types::ToSqlOutput, types::Value};
 
 extern crate smoldb_derive;
 pub use smoldb_derive::{Smoldb};
