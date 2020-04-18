@@ -1,6 +1,8 @@
 # smoldb
 
-An ***extremely experimental*** abstract database interface over SQLite, designed to allow type-safe NoSQL like storage of serde compatible objects with indexing, without needing to write any SQL
+An ***extremely experimental*** abstract database interface over SQLite, designed to allow type-safe NoSQL-like* storage of `serde` compatible objects with indexing, without needing to write any SQL.
+
+*you can't actually search arbitrary documents, you have to decide on what to index up front. however, you can _store_ arbitrary documents which might be enough for some applications.
 
 This consists of a set of traits in [smoldb_traits](smoldb_traits) and a set of proc macros in [smoldb_derive](smoldb_derive), with everything conveniently re-exported in the top-level `smoldb` crate.
 
@@ -30,7 +32,7 @@ Check out the [example](smoldb/tests/example.rs) for a working example.
 
 First, define a type that is serializable and derives from `Smoldb`.
 The `#[index]` macro specifies that you would like to be able to search
-for objects using this index
+for objects using this index. Note that any inexable types must implement `ToSql`.
 
 ```rust
 
@@ -48,6 +50,6 @@ pub struct User {
 }
 ```
 
-You can then interact with objects using the `Store` traits. You may notice that some methods require the fully qualified trait syntax to provide type information.
+You can then interact with objects using the `Store` traits. Note that some methods require the fully qualified trait syntax to provide type information (usually where you're not passing an object in already).
 
 
