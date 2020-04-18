@@ -23,20 +23,6 @@ pub struct Example {
 
 const TABLE_NAME: &str = "test_table";
 
-#[test]
-fn sql_create() {
-    assert_eq!(&Example::sql_create("test"), "CREATE TABLE test (name VARCHAR NOT NULL, email VARCHAR NOT NULL, __object BLOB NOT NULL);");
-}
-
-#[test]
-fn sql_insert() {
-    assert_eq!(&Example::sql_insert("test"), "INSERT INTO test (name, email, __object) VALUES (?1, ?2, ?3);");
-}
-
-#[test]
-fn sql_select() {
-    assert_eq!(&Example::sql_select("test", &[ExampleIndicies::Name("John Doe".to_string())]), "SELECT __object FROM test WHERE name = ?;");
-}
 
 #[test]
 fn integration() {
@@ -55,8 +41,30 @@ fn integration() {
     // Insert object into table
     conn.insert(TABLE_NAME, &e).unwrap();
 
-    // Fetch objects from the table
+    // Fetch all objects from the table
     let e1 = Store::<Example>::select(&conn, TABLE_NAME, &[]).unwrap();
+    assert_eq!(&e1, &[e.clone()]);
 
-    assert_eq!(&e1, &[e]);
+    // Fetch objects with an index
+    let e1 = Store::<Example>::select(&conn, TABLE_NAME, &[ExampleIndicies::Name("Jane Smith".to_string())]).unwrap();
+    assert_eq!(&e1, &[e.clone()]);
+
+    let e1 = Store::<Example>::select(&conn, TABLE_NAME, &[ExampleIndicies::Name("Dave".to_string())]).unwrap();
+    assert_eq!(&e1, &[]);
+}
+
+
+#[test]
+fn sql_create() {
+    assert_eq!(&Example::sql_create("test"), "CREATE TABLE test (name VARCHAR NOT NULL, email VARCHAR NOT NULL, __object BLOB NOT NULL);");
+}
+
+#[test]
+fn sql_insert() {
+    assert_eq!(&Example::sql_insert("test"), "INSERT INTO test (name, email, __object) VALUES (?1, ?2, ?3);");
+}
+
+#[test]
+fn sql_select() {
+    assert_eq!(&Example::sql_select("test", &[ExampleIndicies::Name("John Doe".to_string())]), "SELECT __object FROM test WHERE name = ?;");
 }
