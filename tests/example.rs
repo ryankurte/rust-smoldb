@@ -1,6 +1,5 @@
 
 
-#[macro_use]
 extern crate rusqlite;
 use rusqlite::{Connection, ToSql, types::ToSqlOutput};
 
@@ -11,11 +10,13 @@ extern crate smoldb;
 use smoldb::*;
 
 #[derive(Clone, Debug, PartialEq, Smoldb, Serialize, Deserialize)]
-pub struct Example {
+pub struct User {
+    //#[index]
+    pub id: isize,
+
     #[index]
     pub name: String,
 
-    #[index]
     pub email: String,
 
     pub description: String,
@@ -30,9 +31,10 @@ fn integration() {
     let conn = Connection::open_in_memory().unwrap();
 
     // Build new table
-    Store::<Example>::create_table(&conn, TABLE_NAME).unwrap();
+    Store::<User>::create_table(&conn, TABLE_NAME).unwrap();
 
-    let e = Example {
+    let mut e = User {
+        id: 0,
         name: "Jane Smith".to_string(),
         email: "jasm@abcd.org".to_string(),
         description: "Test user!".to_string(),
@@ -42,29 +44,30 @@ fn integration() {
     conn.insert(TABLE_NAME, &e).unwrap();
 
     // Fetch all objects from the table
-    let e1 = Store::<Example>::select(&conn, TABLE_NAME, &[]).unwrap();
+    let e1: Vec<User> = conn.select(TABLE_NAME, &[]).unwrap();
     assert_eq!(&e1, &[e.clone()]);
 
     // Fetch objects with an index
-    let e1 = Store::<Example>::select(&conn, TABLE_NAME, &[ExampleIndicies::Name("Jane Smith".to_string())]).unwrap();
+    let e1: Vec<User> = conn.select(TABLE_NAME, &[UserIndicies::Name("Jane Smith".to_string())]).unwrap();
     assert_eq!(&e1, &[e.clone()]);
 
-    let e1 = Store::<Example>::select(&conn, TABLE_NAME, &[ExampleIndicies::Name("Dave".to_string())]).unwrap();
+    let e1: Vec<User> = conn.select(TABLE_NAME, &[UserIndicies::Name("Dave".to_string())]).unwrap();
     assert_eq!(&e1, &[]);
-}
 
+    // Update an object
+    e.email = "asdfsfd@asd.com".to_string();
+    e.description = "A replacement description".to_string();
 
-#[test]
-fn sql_create() {
-    assert_eq!(&Example::sql_create("test"), "CREATE TABLE test (name VARCHAR NOT NULL, email VARCHAR NOT NULL, __object BLOB NOT NULL);");
-}
+    conn.update(TABLE_NAME, &[UserIndicies::Name("Jane Smith".to_string())], &e).unwrap();
 
-#[test]
-fn sql_insert() {
-    assert_eq!(&Example::sql_insert("test"), "INSERT INTO test (name, email, __object) VALUES (?1, ?2, ?3);");
-}
+    // Check object was updated
+    let e1: Vec<User> = conn.select(TABLE_NAME, &[UserIndicies::Name("Jane Smith".to_string())]).unwrap();
+    assert_eq!(&e1, &[e.clone()]);
 
-#[test]
-fn sql_select() {
-    assert_eq!(&Example::sql_select("test", &[ExampleIndicies::Name("John Doe".to_string())]), "SELECT __object FROM test WHERE name = ?;");
+    // Delete object
+    Store::<User>::delete(&conn, TABLE_NAME, &[UserIndicies::Name("Jane Smith".to_string())]).unwrap();
+
+    // Check no objects exist
+    let e1: Vec<User> = conn.select(TABLE_NAME, &[]).unwrap();
+    assert_eq!(&e1, &[]);
 }

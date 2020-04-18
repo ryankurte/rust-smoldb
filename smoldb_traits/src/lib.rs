@@ -2,6 +2,9 @@
 extern crate serde;
 pub use serde::{ser::Serialize, de::DeserializeOwned};
 
+extern crate rusqlite;
+use rusqlite::ToSql;
+
 
 pub const OBJECT_KEY: &str = "__object";
 
@@ -18,22 +21,14 @@ pub trait Storable {
 
     /// Generate select string
     fn sql_select(table_name: &str, indicies: &[Self::Indicies]) -> String;
-}
 
-pub trait Store<T> {
-    type Indicies;
-    type Error;
+    /// Generate delete string
+    fn sql_update(table_name: &str, indicies: &[Self::Indicies]) -> String;
 
-    fn create_table(&self, table_name: &str) -> Result<(), Self::Error>;
+    /// Generate delete string
+    fn sql_delete(table_name: &str, indicies: &[Self::Indicies]) -> String;
 
-    fn insert(&self, table_name: &str, t: &T) -> Result<(), Self::Error>;
-
-    fn select(&self, table_name: &str, indicies: &[Self::Indicies]) -> Result<Vec<T>, Self::Error>;
-
-    #[cfg(nope)]
-    fn update(&self, table_name: &str, indicies: &[Self::Indicies], t: T) -> Result<(), Self::Error>;
-
-    #[cfg(nope)]
-    fn delete(&self, indicies: &[Self::Indicies]) -> Result<(), Self::Error>;
+    /// Generate params from object body
+    fn params<'a>(&'a self) -> Vec<Box<&'a dyn ToSql>>;
 }
 
