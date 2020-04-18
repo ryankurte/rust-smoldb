@@ -1,27 +1,12 @@
-[package]
-name = "smoldb"
-version = "0.1.0"
-authors = ["ryan <ryan@kurte.nz>"]
-edition = "2018"
 
-[dependencies]
-bincode = "1.2.1"
-log = "0.4.8"
-rusqlite = "0.22.0"
+[workspace]
+members = [
+    "smoldb",
+    "smoldb_derive",
+    "smoldb_traits",
+]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies.serde]
-version = "1.0.106"
-features = [ "derive" ]
-
-[dependencies.smoldb_derive]
-path = "./smoldb_derive"
-
-[dependencies.smoldb_traits]
-path = "./smoldb_traits"
-
-
-[dev-dependencies]
-tempfile = "3.1.0"
-
+[patch.crates-io]
+smoldb = { path = "./smoldb" }
+smoldb_derive = { path = "./smoldb_derive" }
+smoldb_traits = { path = "./smoldb_traits" }

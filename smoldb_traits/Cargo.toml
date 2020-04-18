@@ -1,8 +1,11 @@
 [package]
 name = "smoldb_traits"
+description = "Trait definitions for smoldb"
 version = "0.1.0"
 authors = ["ryan <ryan@kurte.nz>"]
 edition = "2018"
+repository = "https://github.com/ryankurte/rust-smoldb"
+license = "MPL-2.0"
 
 [dependencies]
 rusqlite = "0.22.0"

@@ -1,7 +1,6 @@
 
 
 extern crate rusqlite;
-use rusqlite::{Connection, ToSql, types::ToSqlOutput};
 
 #[macro_use]
 extern crate serde;
